@@ -1,0 +1,30 @@
+{
+  "name": "lumela-ug",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "geolib": "^3.3.4",
+    "lucide-react": "^0.424.0",
+    "mapbox-gl": "^3.5.1",
+    "next": "^14.2.35",
+    "next-pwa": "^5.6.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hot-toast": "^2.4.1",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^14.2.35",
+    "postcss": "^8.4.40",
+    "tailwindcss": "^3.4.7"
+  }
+}

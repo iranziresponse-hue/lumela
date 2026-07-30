@@ -1,0 +1,30 @@
+{
+  "name": "Lumela.ug",
+  "short_name": "Lumela",
+  "description": "Live Kampala power reports",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8faf7",
+  "theme_color": "#101114",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Report power on",
+      "short_name": "Power on",
+      "url": "/?report=on"
+    },
+    {
+      "name": "Report power off",
+      "short_name": "Power off",
+      "url": "/?report=off"
+    }
+  ]
+}
