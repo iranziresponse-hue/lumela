@@ -18,11 +18,14 @@ body {
 
 body {
   margin: 0;
+  overflow-x: hidden;
   color: #101114;
   background:
-    linear-gradient(180deg, rgba(247, 201, 72, 0.2), rgba(248, 250, 247, 0) 240px),
+    radial-gradient(1200px 480px at 12% -10%, rgba(247, 201, 72, 0.22), transparent 60%),
+    radial-gradient(900px 420px at 100% 0%, rgba(21, 164, 111, 0.08), transparent 55%),
     #f8faf7;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -30,14 +33,10 @@ input {
   font: inherit;
 }
 
-.mapboxgl-popup-content {
-  border-radius: 8px;
-  box-shadow: 0 14px 40px rgba(16, 17, 20, 0.2);
-  padding: 12px 14px;
+button {
+  cursor: pointer;
 }
 
-.mapboxgl-popup-close-button {
-  min-width: 28px;
-  min-height: 28px;
-  font-size: 18px;
+::selection {
+  background: rgba(247, 201, 72, 0.45);
 }

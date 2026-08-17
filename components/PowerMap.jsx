@@ -1,12 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import mapboxgl from "mapbox-gl";
+import * as maplibregl from "maplibre-gl";
 import { KAMPALA_BOUNDS, KAMPALA_CENTER } from "@/lib/constants";
 import { clustersToGeoJson } from "@/lib/report-utils";
 import { useLumelaStore } from "@/lib/store";
 
-const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
+
+// Required under webpack (Next.js): maplibre-gl v6 split its tile-parsing
+// worker into a module that imports a sibling file. Pointing setWorkerUrl
+// at the package's dist file via `new URL(..., import.meta.url)` makes
+// webpack copy only that one file, not the sibling it imports, so the
+// worker 404s on load and vector tiles never render. `scripts/copy-
+// maplibre-worker.mjs` (run on postinstall) copies both files as-is into
+// public/maplibre/, which sidesteps webpack's asset pipeline entirely.
+maplibregl.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
 export default function PowerMap({ clusters }) {
   const mapRef = useRef(null);
@@ -23,23 +32,32 @@ export default function PowerMap({ clusters }) {
   }, [clusters]);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || !mapboxToken) {
+    if (!containerRef.current || mapRef.current) {
       return;
     }
 
-    mapboxgl.accessToken = mapboxToken;
-
-    const map = new mapboxgl.Map({
+    const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/light-v11",
+      style: MAP_STYLE,
       center: [KAMPALA_CENTER.lng, KAMPALA_CENTER.lat],
       zoom: 11.4,
       maxBounds: KAMPALA_BOUNDS,
       attributionControl: false
     });
 
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
-    map.addControl(new mapboxgl.AttributionControl({ compact: true }), "bottom-right");
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: false }),
+      "top-right"
+    );
+    map.addControl(
+      new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showAccuracyCircle: false
+      }),
+      "top-right"
+    );
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
     map.on("load", () => {
       map.addSource("reports", {
@@ -133,7 +151,7 @@ export default function PowerMap({ clusters }) {
     const lngLat = [userLocation.lng, userLocation.lat];
 
     if (!userMarkerRef.current) {
-      userMarkerRef.current = new mapboxgl.Marker({ color: "#101114" })
+      userMarkerRef.current = new maplibregl.Marker({ color: "#101114" })
         .setLngLat(lngLat)
         .addTo(mapRef.current);
     } else {
@@ -143,19 +161,5 @@ export default function PowerMap({ clusters }) {
     mapRef.current.easeTo({ center: lngLat, zoom: 13, duration: 800 });
   }, [userLocation]);
 
-  if (!mapboxToken) {
-    return (
-      <div className="relative h-full min-h-[420px] overflow-hidden rounded-lg border border-ink/15 bg-[#e8eddf]">
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,17,20,0.08)_1px,transparent_1px),linear-gradient(rgba(16,17,20,0.08)_1px,transparent_1px)] bg-[size:44px_44px]" />
-        <div className="absolute left-[48%] top-[42%] h-5 w-5 rounded-full border-2 border-ink bg-powerOn shadow-panel" />
-        <div className="absolute left-[56%] top-[51%] h-5 w-5 rounded-full border-2 border-ink bg-powerOff shadow-panel" />
-        <div className="absolute left-[42%] top-[58%] h-3.5 w-3.5 rounded-full border border-ink bg-[#7c828d] shadow-panel" />
-        <div className="absolute bottom-4 left-4 rounded bg-ink px-3 py-2 text-sm font-bold text-white">
-          Add Mapbox token
-        </div>
-      </div>
-    );
-  }
-
-  return <div ref={containerRef} className="h-full min-h-[420px] rounded-lg" />;
+  return <div ref={containerRef} className="h-full min-h-[420px] rounded-xl" />;
 }
