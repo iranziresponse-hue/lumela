@@ -106,9 +106,13 @@ export default function LumelaDashboard() {
     setReports(fetched);
     setIsSynced(synced);
 
-    if (!synced && hasSupabaseConfig && !hasWarnedSyncRef.current) {
+    if (!synced && !hasWarnedSyncRef.current) {
       hasWarnedSyncRef.current = true;
-      toast.error("Can't reach shared reports — showing your own only");
+      toast.error(
+        hasSupabaseConfig
+          ? "Can't reach shared reports — showing your own only"
+          : "This deployment has no backend configured — reports aren't being shared"
+      );
     } else if (synced) {
       hasWarnedSyncRef.current = false;
     }
