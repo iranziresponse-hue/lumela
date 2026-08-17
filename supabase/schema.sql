@@ -14,9 +14,17 @@ create table if not exists private.app_secrets (
 
 alter table private.app_secrets enable row level security;
 
+-- security definer: public_reports (below) calls this while being queried
+-- by anon, and anon must never get direct SELECT on app_secrets. Without
+-- security definer, this function would run with anon's own privileges
+-- and fail with "permission denied for schema private" the moment it
+-- tries to read the table -- being owned by the view/table owner is what
+-- lets it reach the secret on the caller's behalf.
 create or replace function private.report_hash_pepper()
 returns text
 language plpgsql
+security definer
+set search_path = private
 stable
 as $$
 declare
@@ -31,6 +39,9 @@ begin
   return pepper;
 end;
 $$;
+
+grant usage on schema private to anon, authenticated;
+grant execute on function private.report_hash_pepper() to anon, authenticated;
 
 create table if not exists public.reports (
   id uuid primary key default gen_random_uuid(),

@@ -18,6 +18,7 @@ import {
   Zap
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
+import { reverseGeocode } from "@/lib/geocode";
 import { getOrCreateDeviceId, normalizePhone, sha256 } from "@/lib/hash";
 import {
   fetchReports,
@@ -63,6 +64,7 @@ export default function LumelaDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [isSynced, setIsSynced] = useState(true);
+  const [locationLabel, setLocationLabel] = useState(null);
   const hasWarnedSyncRef = useRef(false);
   const reports = useLumelaStore((state) => state.reports);
   const setReports = useLumelaStore((state) => state.setReports);
@@ -73,6 +75,31 @@ export default function LumelaDashboard() {
   const clusters = useMemo(() => clusterReports(reports), [reports]);
   const featuredCluster = selectedCluster || clusters[0];
   const verifiedCount = clusters.filter((cluster) => cluster.verified).length;
+
+  useEffect(() => {
+    if (!featuredCluster) {
+      setLocationLabel(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLocationLabel(null);
+
+    reverseGeocode(featuredCluster.lat, featuredCluster.lng).then((label) => {
+      if (!cancelled) {
+        setLocationLabel(label);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // Depend on the coordinates, not the cluster object: clusterReports()
+    // recomputes a new object every poll even when the place hasn't
+    // moved, and re-running this on every poll would burn unnecessary
+    // Nominatim lookups (cache-backed, but still pointless work).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featuredCluster?.lat, featuredCluster?.lng]);
 
   const refreshReports = useCallback(async () => {
     const { reports: fetched, synced } = await fetchReports();
@@ -201,7 +228,8 @@ export default function LumelaDashboard() {
       return;
     }
 
-    const message = `Lumela: ${statusLabel(cluster.status)} near ${cluster.lat.toFixed(4)}, ${cluster.lng.toFixed(4)}, updated ${formatAgo(cluster.latestAt)} by ${cluster.peopleCount} people.`;
+    const place = locationLabel || `${cluster.lat.toFixed(4)}, ${cluster.lng.toFixed(4)}`;
+    const message = `Lumela: ${statusLabel(cluster.status)} near ${place}, updated ${formatAgo(cluster.latestAt)} by ${cluster.peopleCount} people.`;
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
@@ -380,7 +408,10 @@ export default function LumelaDashboard() {
                   </p>
                   <p className="flex items-center gap-2">
                     <MapPin aria-hidden="true" size={16} className="shrink-0 text-ink/35" />
-                    {featuredCluster.lat.toFixed(4)}, {featuredCluster.lng.toFixed(4)}
+                    <span className="truncate">
+                      {locationLabel ||
+                        `${featuredCluster.lat.toFixed(4)}, ${featuredCluster.lng.toFixed(4)}`}
+                    </span>
                   </p>
                 </div>
               </>
