@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
-import { KAMPALA_BOUNDS, KAMPALA_CENTER } from "@/lib/constants";
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from "@/lib/constants";
 import { clustersToGeoJson } from "@/lib/report-utils";
 import { useLumelaStore } from "@/lib/store";
 
@@ -39,9 +39,8 @@ export default function PowerMap({ clusters }) {
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: MAP_STYLE,
-      center: [KAMPALA_CENTER.lng, KAMPALA_CENTER.lat],
-      zoom: 11.4,
-      maxBounds: KAMPALA_BOUNDS,
+      center: [DEFAULT_MAP_CENTER.lng, DEFAULT_MAP_CENTER.lat],
+      zoom: DEFAULT_MAP_ZOOM,
       attributionControl: false
     });
 
@@ -49,17 +48,22 @@ export default function PowerMap({ clusters }) {
       new maplibregl.NavigationControl({ showCompass: false }),
       "top-right"
     );
-    map.addControl(
-      new maplibregl.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
-        trackUserLocation: true,
-        showAccuracyCircle: false
-      }),
-      "top-right"
-    );
+
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showAccuracyCircle: false
+    });
+    map.addControl(geolocate, "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
     map.on("load", () => {
+      // No fixed city to center on: try to recenter on wherever the user
+      // actually is. Falls back to sitting at the neutral world view if
+      // permission is denied or geolocation is unavailable -- the control
+      // handles that itself, no error path needed here.
+      geolocate.trigger();
+
       map.addSource("reports", {
         type: "geojson",
         data: clustersToGeoJson(clustersRef.current)

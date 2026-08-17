@@ -1,13 +1,13 @@
-# Lumela.ug PWA
+# Lumela PWA
 
-Weekend MVP for Kampala power status reports.
+Weekend MVP for crowdsourced power status reports. Not tied to any one city — reports, verification, and the map all work off the reporter's actual coordinates, wherever that is.
 
 ## MVP Coverage
 
 - `FR1.1`: POWER ON / POWER OFF report buttons without login
 - `FR1.2`: geolocation, timestamp, and hashed phone/device identity
-- `FR2.1`: Kampala map with power reports
-- `FR2.2`: grey unverified dots, larger verified dots after 3 weighted reports in 30 minutes within 1 km
+- `FR2.1`: live map of power reports, centered on the user's own location
+- `FR2.2`: grey unverified dots, larger verified dots after 3 weighted reports in 30 minutes within 1 km — the same rule applies in any location, there's no region allowlist
 - `FR4.1`: WhatsApp sharing for latest selected area status
 - `FR4.2`: installable PWA shell with offline app cache
 

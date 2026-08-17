@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   CheckCircle2,
   Clock,
+  CloudOff,
   ListChecks,
   MapPin,
   Phone,
@@ -23,6 +24,7 @@ import {
   flushQueuedReports,
   submitReport
 } from "@/lib/report-service";
+import { hasSupabaseConfig } from "@/lib/supabase";
 import {
   clusterReports,
   formatAgo,
@@ -60,6 +62,8 @@ export default function LumelaDashboard() {
   const [phone, setPhone] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
+  const [isSynced, setIsSynced] = useState(true);
+  const hasWarnedSyncRef = useRef(false);
   const reports = useLumelaStore((state) => state.reports);
   const setReports = useLumelaStore((state) => state.setReports);
   const selectedCluster = useLumelaStore((state) => state.selectedCluster);
@@ -70,18 +74,31 @@ export default function LumelaDashboard() {
   const featuredCluster = selectedCluster || clusters[0];
   const verifiedCount = clusters.filter((cluster) => cluster.verified).length;
 
+  const refreshReports = useCallback(async () => {
+    const { reports: fetched, synced } = await fetchReports();
+    setReports(fetched);
+    setIsSynced(synced);
+
+    if (!synced && hasSupabaseConfig && !hasWarnedSyncRef.current) {
+      hasWarnedSyncRef.current = true;
+      toast.error("Can't reach shared reports — showing your own only");
+    } else if (synced) {
+      hasWarnedSyncRef.current = false;
+    }
+  }, [setReports]);
+
   useEffect(() => {
     setIsOnline(navigator.onLine);
 
     const load = async () => {
       await flushQueuedReports();
-      setReports(await fetchReports());
+      await refreshReports();
     };
 
     const handleOnline = async () => {
       setIsOnline(true);
       await flushQueuedReports();
-      setReports(await fetchReports());
+      await refreshReports();
     };
 
     const handleOffline = () => setIsOnline(false);
@@ -128,11 +145,7 @@ export default function LumelaDashboard() {
       window.removeEventListener("offline", handleOffline);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [setReports]);
-
-  async function refreshReports() {
-    setReports(await fetchReports());
-  }
+  }, [refreshReports]);
 
   async function handleReport(status) {
     setIsSubmitting(true);
@@ -188,7 +201,7 @@ export default function LumelaDashboard() {
       return;
     }
 
-    const message = `Lumela.ug: ${statusLabel(cluster.status)} near Kampala, updated ${formatAgo(cluster.latestAt)} by ${cluster.peopleCount} people.`;
+    const message = `Lumela: ${statusLabel(cluster.status)} near ${cluster.lat.toFixed(4)}, ${cluster.lng.toFixed(4)}, updated ${formatAgo(cluster.latestAt)} by ${cluster.peopleCount} people.`;
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
@@ -224,10 +237,10 @@ export default function LumelaDashboard() {
                       }`}
                     />
                   </span>
-                  Kampala
+                  Live network
                 </p>
                 <h1 className="mt-1.5 text-3xl font-extrabold leading-none tracking-tight text-ink sm:text-4xl">
-                  Lumela<span className="text-sun">.</span>ug
+                  Lumela<span className="text-sun">.</span>
                 </h1>
               </div>
               <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-ink text-sun shadow-lift">
@@ -251,13 +264,24 @@ export default function LumelaDashboard() {
                 </p>
               </div>
               <div className="min-w-0 rounded-xl border border-ink/[0.06] bg-[#f8faf7] p-3">
-                {isOnline ? (
+                {isOnline && isSynced ? (
                   <Wifi aria-hidden="true" size={15} className="text-ink/35" strokeWidth={2.25} />
+                ) : isOnline ? (
+                  <CloudOff aria-hidden="true" size={15} className="text-powerOff/70" strokeWidth={2.25} />
                 ) : (
                   <WifiOff aria-hidden="true" size={15} className="text-ink/35" strokeWidth={2.25} />
                 )}
-                <p className="mt-1.5 truncate text-xl font-extrabold">
-                  {isOnline ? "Live" : "Saved"}
+                <p
+                  className={`mt-1.5 truncate text-xl font-extrabold ${
+                    isOnline && !isSynced ? "text-powerOff" : ""
+                  }`}
+                  title={
+                    isOnline && !isSynced
+                      ? "Can't reach shared reports right now — showing your own only"
+                      : undefined
+                  }
+                >
+                  {isOnline && isSynced ? "Live" : isOnline ? "Local" : "Saved"}
                 </p>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-ink/45">
                   Signal

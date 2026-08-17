@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Lumela.ug",
-  description: "Live Kampala power reports",
+  title: "Lumela",
+  description: "Live local power status reports",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

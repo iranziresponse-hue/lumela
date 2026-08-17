@@ -40,3 +40,34 @@ button {
 ::selection {
   background: rgba(247, 201, 72, 0.45);
 }
+
+/* Restyle MapLibre's default control chrome to match the card language
+   elsewhere (soft radius, subtle shadow) -- the icons themselves are
+   baked into the library's CSS as background-images, so those stay. */
+.maplibregl-ctrl-group {
+  overflow: hidden;
+  border-radius: 12px !important;
+  border: 1px solid rgba(16, 17, 20, 0.06);
+  box-shadow:
+    0 1px 2px rgba(16, 17, 20, 0.06),
+    0 20px 40px -12px rgba(16, 17, 20, 0.14) !important;
+}
+
+.maplibregl-ctrl-group button {
+  width: 36px !important;
+  height: 36px !important;
+  transition: background-color 0.15s ease;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background-color: rgba(16, 17, 20, 0.04) !important;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(16, 17, 20, 0.06) !important;
+}
+
+.maplibregl-ctrl-attrib {
+  border-radius: 8px !important;
+  font-size: 11px !important;
+}

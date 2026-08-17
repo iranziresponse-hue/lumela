@@ -106,7 +106,10 @@ begin
     return;
   end if;
 
-  if p_lat < -2 or p_lat > 5 or p_lng < 28 or p_lng > 36 then
+  -- Real-world coordinate range only, not a specific region: the app
+  -- isn't tied to one city, so this rejects garbage input, not
+  -- out-of-town reports.
+  if p_lat < -90 or p_lat > 90 or p_lng < -180 or p_lng > 180 then
     return query select false, p_id, 'invalid_location';
     return;
   end if;

@@ -1,7 +1,7 @@
 {
-  "name": "Lumela.ug",
+  "name": "Lumela",
   "short_name": "Lumela",
-  "description": "Live Kampala power reports",
+  "description": "Live local power status reports",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8faf7",
