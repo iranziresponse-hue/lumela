@@ -12,6 +12,14 @@ export const metadata = {
   title: "Lumela",
   description: "Live local power status reports",
   manifest: "/manifest.json",
+  // Same file the PWA manifest and header both use -- one mark, three
+  // places, instead of the browser tab having no icon at all (there was
+  // no <link rel="icon"> anywhere previously) while the header rendered
+  // an unrelated live Lucide icon as a stand-in logo.
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg"
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

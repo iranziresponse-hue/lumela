@@ -17,8 +17,7 @@ import {
   ShieldCheck,
   Wifi,
   WifiOff,
-  X,
-  Zap
+  X
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { reverseGeocode } from "@/lib/geocode";
@@ -382,9 +381,12 @@ export default function LumelaDashboard() {
                   Lumela<span className="text-sun">.</span>
                 </h1>
               </div>
-              <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-ink text-sun shadow-lift">
-                <Zap aria-hidden="true" size={28} strokeWidth={2.5} />
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/icon.svg"
+                alt="Lumela"
+                className="h-14 w-14 shrink-0 rounded-2xl shadow-lift"
+              />
             </div>
 
             <div className="mt-5 grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2.5">
