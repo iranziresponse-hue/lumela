@@ -31,6 +31,7 @@ import {
   flushQueuedReports,
   getFlaggedReportIds,
   markReportFlagged,
+  removeLocalReport,
   submitReport
 } from "@/lib/report-service";
 import { hasSupabaseConfig } from "@/lib/supabase";
@@ -317,6 +318,13 @@ export default function LumelaDashboard() {
     try {
       const reporterHash = await sha256(getOrCreateDeviceId());
       const result = await flagReport(featuredReportId, reporterHash);
+
+      if (result.gone) {
+        removeLocalReport(featuredReportId);
+        toast("That report no longer exists");
+        await refreshReports();
+        return;
+      }
 
       if (result.error) {
         toast.error("Couldn't flag this report — try again");
