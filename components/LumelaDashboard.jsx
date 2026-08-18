@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
+  Camera,
   CheckCircle2,
   Clock,
   CloudOff,
+  Flag,
   ListChecks,
   MapPin,
   Phone,
@@ -15,14 +17,20 @@ import {
   ShieldCheck,
   Wifi,
   WifiOff,
+  X,
   Zap
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { reverseGeocode } from "@/lib/geocode";
 import { getOrCreateDeviceId, normalizePhone, sha256 } from "@/lib/hash";
+import { uploadReportPhoto } from "@/lib/photo";
 import {
+  attachReportPhoto,
   fetchReports,
+  flagReport,
   flushQueuedReports,
+  getFlaggedReportIds,
+  markReportFlagged,
   submitReport
 } from "@/lib/report-service";
 import { hasSupabaseConfig } from "@/lib/supabase";
@@ -65,7 +73,12 @@ export default function LumelaDashboard() {
   const [isOnline, setIsOnline] = useState(true);
   const [isSynced, setIsSynced] = useState(true);
   const [locationLabel, setLocationLabel] = useState(null);
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [flaggedIds, setFlaggedIds] = useState([]);
+  const [isFlagging, setIsFlagging] = useState(false);
   const hasWarnedSyncRef = useRef(false);
+  const photoInputRef = useRef(null);
   const reports = useLumelaStore((state) => state.reports);
   const setReports = useLumelaStore((state) => state.setReports);
   const selectedCluster = useLumelaStore((state) => state.selectedCluster);
@@ -75,6 +88,28 @@ export default function LumelaDashboard() {
   const clusters = useMemo(() => clusterReports(reports), [reports]);
   const featuredCluster = selectedCluster || clusters[0];
   const verifiedCount = clusters.filter((cluster) => cluster.verified).length;
+  // The newest report contributing to the cluster is what's actually being
+  // displayed as "the current status" -- that's what a flag or photo
+  // attaches to, since a cluster itself isn't a single row.
+  const featuredReportId = featuredCluster?.reports?.[0]?.id;
+  const featuredPhotoUrl = featuredCluster?.reports?.find((report) => report.photo_url)
+    ?.photo_url;
+  const isFeaturedFlagged = featuredReportId ? flaggedIds.includes(featuredReportId) : false;
+
+  useEffect(() => {
+    setFlaggedIds(getFlaggedReportIds());
+  }, []);
+
+  // Revokes the *previous* preview URL whenever it's replaced, and the
+  // final one on unmount -- one place for the blob URL's lifecycle
+  // instead of duplicating revocation in every handler that changes it.
+  useEffect(() => {
+    return () => {
+      if (photoPreview) {
+        URL.revokeObjectURL(photoPreview);
+      }
+    };
+  }, [photoPreview]);
 
   useEffect(() => {
     if (!featuredCluster) {
@@ -216,6 +251,21 @@ export default function LumelaDashboard() {
         return;
       }
 
+      // Photos require actually reaching the server at submit time -- a
+      // queued/offline report has no accepted row yet to attach one to,
+      // so skip silently rather than trying to also queue the upload.
+      if (!result.queued && photoFile) {
+        try {
+          const photoUrl = await uploadReportPhoto(report.id, photoFile);
+          await attachReportPhoto(report.id, photoUrl, report.phone_hash);
+          await refreshReports();
+        } catch {
+          // The report itself already succeeded -- a photo is a bonus,
+          // not something worth surfacing an error for.
+        }
+      }
+
+      clearPhoto();
       toast.success(result.queued ? "Saved offline" : "Report submitted");
     } catch (error) {
       toast.error(error.message || "Report failed");
@@ -236,6 +286,55 @@ export default function LumelaDashboard() {
     const message = `Lumela: ${statusLabel(cluster.status)} near ${place}, updated ${formatAgo(cluster.latestAt)} by ${cluster.peopleCount} people.`;
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function clearPhoto() {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    if (photoInputRef.current) {
+      photoInputRef.current.value = "";
+    }
+  }
+
+  function handlePhotoSelect(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  }
+
+  async function handleFlag() {
+    if (!featuredReportId || isFeaturedFlagged || isFlagging) {
+      return;
+    }
+
+    setIsFlagging(true);
+
+    try {
+      const reporterHash = await sha256(getOrCreateDeviceId());
+      const result = await flagReport(featuredReportId, reporterHash);
+
+      if (result.error) {
+        toast.error("Couldn't flag this report — try again");
+        return;
+      }
+
+      markReportFlagged(featuredReportId);
+      setFlaggedIds(getFlaggedReportIds());
+
+      if (result.hidden) {
+        toast.success("Report hidden after multiple flags");
+        await refreshReports();
+      } else {
+        toast.success("Thanks — we'll review this");
+      }
+    } finally {
+      setIsFlagging(false);
+    }
   }
 
   return (
@@ -344,6 +443,46 @@ export default function LumelaDashboard() {
               />
             </div>
 
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoSelect}
+              className="hidden"
+            />
+
+            {photoPreview ? (
+              <div className="mt-3 flex items-center gap-3 rounded-xl border border-ink/10 bg-[#f8faf7] p-2.5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photoPreview}
+                  alt="Selected report photo"
+                  className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                />
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink/70">
+                  Photo added
+                </p>
+                <button
+                  type="button"
+                  onClick={clearPhoto}
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-ink/40 transition hover:bg-ink/[0.06] hover:text-ink/70"
+                  aria-label="Remove photo"
+                >
+                  <X aria-hidden="true" size={18} strokeWidth={2.25} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="mt-3 flex w-full items-center gap-2 rounded-xl border border-dashed border-ink/15 bg-[#f8faf7] px-4 py-2.5 text-sm font-semibold text-ink/50 transition hover:border-ink/25 hover:text-ink/70"
+              >
+                <Camera aria-hidden="true" size={17} strokeWidth={2.25} />
+                Add a photo <span className="font-normal text-ink/35">(optional)</span>
+              </button>
+            )}
+
             <div className="mt-4 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
               <button
                 type="button"
@@ -393,15 +532,31 @@ export default function LumelaDashboard() {
                       {statusLabel(featuredCluster.status)}
                     </h2>
                   </div>
-                  <button
-                    type="button"
-                    onClick={shareStatus}
-                    className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-ink text-white transition hover:bg-ink/85 active:scale-95"
-                    title="Share to WhatsApp"
-                    aria-label="Share to WhatsApp"
-                  >
-                    <Share2 aria-hidden="true" size={20} strokeWidth={2.25} />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleFlag}
+                      disabled={isFeaturedFlagged || isFlagging}
+                      title={isFeaturedFlagged ? "Already flagged" : "Flag as inaccurate"}
+                      aria-label={isFeaturedFlagged ? "Already flagged" : "Flag as inaccurate"}
+                      className={`grid h-12 w-12 place-items-center rounded-xl border transition active:scale-95 disabled:cursor-not-allowed ${
+                        isFeaturedFlagged
+                          ? "border-ink/[0.06] bg-ink/[0.04] text-ink/25"
+                          : "border-ink/10 text-ink/40 hover:border-ink/20 hover:text-ink/70"
+                      }`}
+                    >
+                      <Flag aria-hidden="true" size={18} strokeWidth={2.25} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={shareStatus}
+                      className="grid h-12 w-12 place-items-center rounded-xl bg-ink text-white transition hover:bg-ink/85 active:scale-95"
+                      title="Share to WhatsApp"
+                      aria-label="Share to WhatsApp"
+                    >
+                      <Share2 aria-hidden="true" size={20} strokeWidth={2.25} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-4 grid gap-2 text-sm font-medium text-ink/60">
@@ -418,6 +573,15 @@ export default function LumelaDashboard() {
                     </span>
                   </p>
                 </div>
+
+                {featuredPhotoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={featuredPhotoUrl}
+                    alt="Reported power status"
+                    className="mt-4 h-40 w-full rounded-xl object-cover"
+                  />
+                )}
               </>
             ) : (
               <div className="py-6 text-center">

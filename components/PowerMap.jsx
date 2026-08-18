@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
+import { Search } from "lucide-react";
+import toast from "react-hot-toast";
 import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from "@/lib/constants";
+import { searchPlace } from "@/lib/geocode";
 import { clustersToGeoJson } from "@/lib/report-utils";
 import { useLumelaStore } from "@/lib/store";
 
@@ -22,6 +25,8 @@ export default function PowerMap({ clusters }) {
   const containerRef = useRef(null);
   const clustersRef = useRef(clusters);
   const userMarkerRef = useRef(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
   const setSelectedCluster = useLumelaStore((state) => state.setSelectedCluster);
   const setMapReady = useLumelaStore((state) => state.setMapReady);
   const userLocation = useLumelaStore((state) => state.userLocation);
@@ -165,5 +170,55 @@ export default function PowerMap({ clusters }) {
     mapRef.current.easeTo({ center: lngLat, zoom: 13, duration: 800 });
   }, [userLocation]);
 
-  return <div ref={containerRef} className="h-full min-h-[420px] rounded-xl" />;
+  // Explicit-submit only -- Nominatim's usage policy strictly forbids
+  // autocomplete/fire-on-keystroke search, so this must never run from an
+  // onChange handler, only a form submit (button click or Enter).
+  async function handleSearchSubmit(event) {
+    event.preventDefault();
+
+    if (isSearching || !searchQuery.trim() || !mapRef.current) {
+      return;
+    }
+
+    setIsSearching(true);
+
+    try {
+      const result = await searchPlace(searchQuery);
+
+      if (!result) {
+        toast.error("Place not found");
+        return;
+      }
+
+      mapRef.current.flyTo({ center: [result.lng, result.lat], zoom: 14 });
+    } finally {
+      setIsSearching(false);
+    }
+  }
+
+  return (
+    <div className="relative h-full min-h-[420px]">
+      <div ref={containerRef} className="h-full min-h-[420px] rounded-xl" />
+      <form
+        onSubmit={handleSearchSubmit}
+        className="absolute left-3 top-3 z-10 flex h-10 items-center gap-1 rounded-xl border border-ink/[0.06] bg-white pl-3 pr-1 shadow-panel"
+      >
+        <input
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search a place..."
+          aria-label="Search a place"
+          className="h-full w-32 min-w-0 bg-transparent text-sm font-semibold text-ink outline-none placeholder:font-normal placeholder:text-ink/35 sm:w-48"
+        />
+        <button
+          type="submit"
+          disabled={isSearching}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink/40 transition hover:bg-ink/[0.06] hover:text-ink/70 disabled:cursor-wait"
+          aria-label="Search"
+        >
+          <Search aria-hidden="true" size={15} strokeWidth={2.5} />
+        </button>
+      </form>
+    </div>
+  );
 }

@@ -10,6 +10,7 @@ Weekend MVP for crowdsourced power status reports. Not tied to any one city — 
 - `FR2.2`: grey unverified dots, larger verified dots after 3 weighted reports in 30 minutes within 1 km — the same rule applies in any location, there's no region allowlist
 - `FR4.1`: WhatsApp sharing for latest selected area status
 - `FR4.2`: installable PWA shell with offline app cache
+- optional photo attachment per report, place search on the map, and community flagging that auto-hides a report after 3 independent flags
 
 ## Setup
 
@@ -30,7 +31,7 @@ The map needs no key or setup: it renders with [MapLibre GL JS](https://github.c
 
 `npm install` also runs `scripts/copy-maplibre-worker.mjs` (a `postinstall` hook) to copy MapLibre's tile-parsing worker into `public/maplibre/`. That's not optional packaging noise: maplibre-gl v6 splits its worker into a file that imports a sibling module, and Next.js's webpack asset handling only copies the one file it's pointed at — so without this step the worker 404s on its own import and the map silently renders its background with no roads, labels, or data. `public/maplibre/` is gitignored and regenerated on every install.
 
-Run `supabase/schema.sql` in the Supabase SQL editor to create the `reports` table, the `public_reports` view, and the `submit_power_report` RPC that the app uses for all reads/writes.
+Run `supabase/schema.sql` in the Supabase SQL editor to create the `reports` table, the `public_reports` view, the `submit_power_report`/`attach_report_photo`/`flag_report` RPCs, and the `report-photos` Storage bucket — all of it, including the bucket and its upload policy, is created by this one script.
 
 ### Security setup (required)
 
@@ -47,6 +48,21 @@ Generate the random value locally (never commit it) with:
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+### Moderation
+
+A report is hidden automatically once 3 different devices flag it (`public.report_flags` enforces one flag per reporter server-side — the client-side "already flagged" state is just UX, not the real protection). There's no admin UI; that would need Supabase Auth wired up, which is out of scope for now. To review or reverse a hide, use the SQL editor:
+
+```sql
+select * from public.reports where hidden = true order by created_at desc;
+
+-- Restore a false-positive: clear both the counter and the flag records,
+-- or it's one flag away from instantly re-hiding.
+update public.reports set flags = 0, hidden = false where id = '...';
+delete from public.report_flags where report_id = '...';
+```
+
+Hiding a report does **not** delete its photo from Storage — the public URL under `report-photos/` keeps resolving even after the report is hidden. If a hidden report has a photo that needs to actually come down, delete the object from the Storage dashboard (bucket `report-photos`, filename `<report id>.jpg`) as a separate manual step.
 
 ### Free-tier notes
 

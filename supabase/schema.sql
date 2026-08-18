@@ -130,6 +130,20 @@ begin
     return;
   end if;
 
+  -- This RPC is directly callable by anyone with the anon key, independent
+  -- of the client's own upload flow (which attaches photos afterward via
+  -- attach_report_photo, below) -- so a malformed/oversized/foreign URL
+  -- here must not be trusted either. Silently drop it rather than reject
+  -- the whole report over a bad photo.
+  if p_photo_url is not null
+    and (
+      length(p_photo_url) > 512
+      or p_photo_url !~ '^https://[a-z0-9]+\.supabase\.co/storage/v1/object/public/report-photos/'
+    )
+  then
+    p_photo_url := null;
+  end if;
+
   select reports.id
   into duplicate_report_id
   from public.reports
@@ -186,3 +200,137 @@ grant execute on function public.submit_power_report(
   integer,
   timestamptz
 ) to anon, authenticated;
+
+-- Photo attachments -----------------------------------------------------
+--
+-- Uploaded straight to a public Storage bucket by the client, then linked
+-- to a report via attach_report_photo. Reads need no policy at all --
+-- `public = true` on the bucket bypasses RLS for SELECT entirely,
+-- confirmed against Supabase's storage docs. The only write path is one
+-- INSERT policy, and even that is scoped as tightly as anon access allows:
+-- restricted to this bucket and to filenames shaped like
+-- "<report id>.<ext>", tying every upload to a specific report instead of
+-- leaving the bucket a completely open drop box.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'report-photos',
+  'report-photos',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do nothing;
+
+drop policy if exists "Anyone can upload report photos" on storage.objects;
+
+create policy "Anyone can upload report photos"
+on storage.objects for insert
+to anon, authenticated
+with check (
+  bucket_id = 'report-photos'
+  and name ~ '^[0-9a-f-]{36}\.(jpg|jpeg|png|webp)$'
+);
+
+-- SECURITY DEFINER for the same reason submit_power_report is: anon has
+-- no direct UPDATE grant on public.reports, so this is the only path a
+-- client can use to attach a photo after the fact. Scoped to the original
+-- reporter (phone_hash match) and to reports that don't already have a
+-- photo, so a stranger can't attach to -- or overwrite -- someone else's
+-- report.
+create or replace function public.attach_report_photo(
+  p_id uuid,
+  p_photo_url text,
+  p_phone_hash text
+)
+returns table(accepted boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_photo_url is null
+    or length(p_photo_url) > 512
+    or p_photo_url !~ '^https://[a-z0-9]+\.supabase\.co/storage/v1/object/public/report-photos/'
+  then
+    return query select false;
+    return;
+  end if;
+
+  update public.reports
+  set photo_url = p_photo_url
+  where id = p_id
+    and phone_hash = p_phone_hash
+    and photo_url is null;
+
+  return query select found;
+end;
+$$;
+
+grant execute on function public.attach_report_photo(uuid, text, text) to anon, authenticated;
+
+-- Report flagging / lightweight moderation -------------------------------
+--
+-- report_flags is the enforcement layer: one row per (report, reporter),
+-- so flag_report can't be replayed by the same caller to hide a report
+-- alone. Never exposed to clients directly -- only reachable through the
+-- SECURITY DEFINER function below, same pattern as private.app_secrets.
+create table if not exists public.report_flags (
+  report_id uuid not null references public.reports(id) on delete cascade,
+  reporter_hash text not null,
+  created_at timestamptz not null default now(),
+  primary key (report_id, reporter_hash)
+);
+
+alter table public.report_flags enable row level security;
+revoke all on public.report_flags from anon, authenticated;
+
+create or replace function public.flag_report(p_id uuid, p_reporter_hash text)
+returns table(accepted boolean, hidden boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  is_hidden boolean;
+begin
+  if p_reporter_hash is null or length(p_reporter_hash) < 24 then
+    return query select false, false;
+    return;
+  end if;
+
+  insert into public.report_flags (report_id, reporter_hash)
+  values (p_id, p_reporter_hash)
+  on conflict do nothing;
+
+  if not found then
+    -- Already flagged by this reporter -- not an error, just a no-op.
+    select reports.hidden into is_hidden from public.reports where id = p_id;
+    return query select false, coalesce(is_hidden, false);
+    return;
+  end if;
+
+  -- Three independent flags hide a report, same bar submit_power_report's
+  -- verification weight uses for the opposite direction (MIN_VERIFIED_WEIGHT).
+  --
+  -- The RHS `reports.hidden` must be qualified: `returns table(..., hidden
+  -- boolean)` implicitly declares `hidden` as a PL/pgSQL variable in this
+  -- function's scope, so a bare `hidden` here is ambiguous between that
+  -- variable and the column -- Postgres errors with 42702, it doesn't
+  -- guess. The target on the LHS is unambiguous (SET targets are always
+  -- columns) and must stay unqualified.
+  update public.reports
+  set flags = flags + 1,
+      hidden = reports.hidden or (flags + 1) >= 3
+  where id = p_id
+  returning reports.hidden into is_hidden;
+
+  if not found then
+    return query select false, false;
+    return;
+  end if;
+
+  return query select true, is_hidden;
+end;
+$$;
+
+grant execute on function public.flag_report(uuid, text) to anon, authenticated;
